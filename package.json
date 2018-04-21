@@ -1,0 +1,32 @@
+{
+  "name": "prom-dress",
+  "version": "0.0.3",
+  "description": "dress data up for prometheus",
+  "author": "Colin J. Ihrig <cjihrig@gmail.com> (http://www.cjihrig.com/)",
+  "main": "lib/index.js",
+  "homepage": "https://github.com/cjihrig/prom-dress",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cjihrig/prom-dress.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cjihrig/prom-dress/issues"
+  },
+  "license": "MIT",
+  "scripts": {
+    "lint": "belly-button -f",
+    "pretest": "npm run lint",
+    "test": "lab -v -a code -t 100"
+  },
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "devDependencies": {
+    "belly-button": "4.x.x",
+    "code": "5.x.x",
+    "lab": "15.x.x"
+  },
+  "keywords": [
+    "prometheus"
+  ]
+}
