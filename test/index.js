@@ -70,12 +70,12 @@ describe('Prom Dress', () => {
       });
 
       counter.inc();
-      counter.inc({ method: 'get', code: '200' });
+      counter.inc({ method: 'get', code: '200' }, 5500);
       expect(registry.report().split('\n')).to.equal([
         '# HELP http_requests_total The total number of HTTP requests.',
         '# TYPE http_requests_total counter',
         'http_requests_total 1',
-        'http_requests_total{method="get",code="200"} 1',
+        'http_requests_total{method="get",code="200"} 1 5500',
         ''
       ]);
     });
@@ -112,11 +112,14 @@ describe('Prom Dress', () => {
         }).to.throw(errorType, message);
       }
 
+      fail(undefined, TypeError, 'options must be an object');
+      fail(null, TypeError, 'options must be an object');
       fail({ name: 5 }, TypeError, 'metric name must be a string');
       fail({ name: '$' }, RangeError, 'invalid metric name');
       fail({ name: 'foo', help: 5 }, TypeError, 'help must be a string');
       fail({ name: 'foo', help: 'bar', labels: 5 }, TypeError, 'labels must be an array');
       fail({ name: 'foo', help: 'bar', labels: [], registries: 5 }, TypeError, 'registries must be an array');
+      fail({ name: 'foo', help: 'bar', labels: ['94'] }, RangeError, 'invalid label name');
     });
   });
 
@@ -149,8 +152,10 @@ describe('Prom Dress', () => {
       expect(counter.values.get('method:get$').value).to.equal(2);
       counter.inc(3, { method: 'get' });
       expect(counter.values.get('method:get$').value).to.equal(5);
-      counter.inc({ method: 'get' });
+      expect(counter.values.get('method:get$').timestamp).to.equal(undefined);
+      counter.inc({ method: 'get' }, 1000);
       expect(counter.values.get('method:get$').value).to.equal(6);
+      expect(counter.values.get('method:get$').timestamp).to.equal(1000);
     });
 
     it('throws on invalid increment values', () => {
@@ -229,16 +234,19 @@ describe('Prom Dress', () => {
       expect(gauge.values.get('').value).to.equal(5);
       gauge.dec(3);
       expect(gauge.values.get('').value).to.equal(2);
-      gauge.dec({ code: 400 });
+      gauge.dec({ code: 400 }, 3000);
       expect(gauge.values.get('code:400$').value).to.equal(-1);
-      gauge.set(5, { method: 'get' });
+      expect(gauge.values.get('code:400$').timestamp).to.equal(3000);
+      gauge.set(5, { method: 'get' }, 83);
       expect(gauge.values.get('method:get$').value).to.equal(5);
+      expect(gauge.values.get('method:get$').timestamp).to.equal(83);
       gauge.dec(2, { method: 'get' });
       expect(gauge.values.get('method:get$').value).to.equal(3);
       gauge.dec(4, { method: 'get' });
       expect(gauge.values.get('method:get$').value).to.equal(-1);
-      gauge.inc(2.5, { method: 'get' });
+      gauge.inc(2.5, { method: 'get' }, 9000);
       expect(gauge.values.get('method:get$').value).to.equal(1.5);
+      expect(gauge.values.get('method:get$').timestamp).to.equal(9000);
       gauge.inc({ method: 'get' });
       expect(gauge.values.get('method:get$').value).to.equal(2.5);
       gauge.dec({ method: 'get' });
@@ -292,6 +300,149 @@ describe('Prom Dress', () => {
       expect(gauge.values.get('method:get$').value).to.equal(6);
       child.set(99.99);
       expect(gauge.values.get('method:get$').value).to.equal(99.99);
+    });
+  });
+
+  describe('Histogram', () => {
+    it('creates an initialized histogram', () => {
+      const histogram = new Prom.Histogram({
+        name: 'response_time',
+        help: 'HTTP response times.',
+        registries: [],
+        labels: ['method', 'code']
+      });
+      const collect = histogram.collect();
+
+      expect(collect.type).to.equal('histogram');
+      expect(collect.name).to.equal('response_time');
+      expect(collect.help).to.equal('HTTP response times.');
+    });
+
+    it('throws if user provides "le" label', () => {
+      expect(() => {
+        new Prom.Histogram({            // eslint-disable-line no-new
+          name: 'response_time',
+          help: 'HTTP response times.',
+          registries: [],
+          labels: ['code', 'le']
+        });
+      }).to.throw(Error, '"le" is not allowed as a histogram label');
+    });
+
+    it('throws on bad inputs', () => {
+      expect(() => {
+        new Prom.Histogram({            // eslint-disable-line no-new
+          name: 'response_time',
+          help: 'HTTP response times.',
+          registries: [],
+          labels: ['code'],
+          buckets: 5
+        });
+      }).to.throw(TypeError, 'buckets must be an array');
+    });
+
+    it('accepts user defined buckets', () => {
+      const buckets = [1, 2, 3, 4, 5];
+      const histogram = new Prom.Histogram({
+        name: 'response_time',
+        help: 'HTTP response times.',
+        registries: [],
+        labels: ['code'],
+        buckets
+      });
+
+      expect(histogram.buckets).to.equal(buckets);
+      expect(histogram.buckets).to.not.shallow.equal(buckets);
+      buckets.push(6);  // User passed buckets should not be frozen.
+      expect(() => {
+        histogram.buckets.push(6);
+      }).to.throw(Error);
+    });
+
+    it('uses default bucket values if none are provided', () => {
+      const histogram = new Prom.Histogram({
+        name: 'response_time',
+        help: 'HTTP response times.',
+        registries: [],
+        labels: ['code']
+      });
+
+      expect(histogram.buckets).to.equal([0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]);
+    });
+
+    it('can observe values', () => {
+      const registry = new Prom.CollectorRegistry();
+      const histogram = new Prom.Histogram({
+        name: 'response_time',
+        help: 'HTTP response times.',
+        registries: [registry],
+        labels: ['method', 'path', 'code'],
+        buckets: [1, 2, 3, 4, 5]
+      });
+
+      histogram.observe(4, { method: 'get', path: '/foo', code: 200 });
+      histogram.observe(2, { method: 'get', path: '/foo', code: 404 });
+      histogram.observe(3);
+      histogram.observe(1, { method: 'get', path: '/foo', code: 200 });
+      histogram.observe(5, { method: 'get', path: '/foo', code: 200 });
+
+      expect(registry.report().split('\n')).to.equal([
+        '# HELP response_time HTTP response times.',
+        '# TYPE response_time histogram',
+        'response_time_count{method="get",path="/foo",code="200"} 3',
+        'response_time_sum{method="get",path="/foo",code="200"} 10',
+        'response_time_bucket{le="1",method="get",path="/foo",code="200"} 3',
+        'response_time_bucket{le="2",method="get",path="/foo",code="200"} 2',
+        'response_time_bucket{le="3",method="get",path="/foo",code="200"} 2',
+        'response_time_bucket{le="4",method="get",path="/foo",code="200"} 2',
+        'response_time_bucket{le="5",method="get",path="/foo",code="200"} 1',
+        'response_time_count{method="get",path="/foo",code="404"} 1',
+        'response_time_sum{method="get",path="/foo",code="404"} 2',
+        'response_time_bucket{le="1",method="get",path="/foo",code="404"} 1',
+        'response_time_bucket{le="2",method="get",path="/foo",code="404"} 1',
+        'response_time_bucket{le="3",method="get",path="/foo",code="404"} 0',
+        'response_time_bucket{le="4",method="get",path="/foo",code="404"} 0',
+        'response_time_bucket{le="5",method="get",path="/foo",code="404"} 0',
+        'response_time_count 1',
+        'response_time_sum 3',
+        'response_time_bucket{le="1"} 1',
+        'response_time_bucket{le="2"} 1',
+        'response_time_bucket{le="3"} 1',
+        'response_time_bucket{le="4"} 0',
+        'response_time_bucket{le="5"} 0',
+        ''
+      ]);
+    });
+
+    it('throws if observe() is passed the "le" label', () => {
+      const histogram = new Prom.Histogram({
+        name: 'response_time',
+        help: 'HTTP response times.',
+        registries: [],
+        labels: ['code']
+      });
+
+      expect(() => {
+        histogram.observe(4, { code: 200, le: 5 });
+      }).to.throw(Error, '"le" is not allowed as a histogram label');
+    });
+
+    it('creates a child histogram', () => {
+      const histogram = new Prom.Histogram({
+        name: 'response_time',
+        help: 'HTTP response times.',
+        registries: [],
+        labels: ['method', 'path', 'code'],
+        buckets: [1, 2]
+      });
+
+      histogram.observe(2, { method: 'get', path: '/foo', code: 200 });
+      expect(histogram.values.get('code:200$le:1$method:get$path:/foo$').value).to.equal(1);
+      expect(histogram.values.get('code:200$le:2$method:get$path:/foo$').value).to.equal(1);
+      const child = histogram.labels({ method: 'get', path: '/foo', code: 200 });
+      child.observe(1);
+      expect(histogram.values.get('code:200$le:1$method:get$path:/foo$').value).to.equal(2);
+      expect(histogram.values.get('code:200$le:2$method:get$path:/foo$').value).to.equal(1);
     });
   });
 
