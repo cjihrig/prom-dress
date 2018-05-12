@@ -391,25 +391,28 @@ describe('Prom Dress', () => {
         '# TYPE response_time histogram',
         'response_time_count{method="get",path="/foo",code="200"} 3',
         'response_time_sum{method="get",path="/foo",code="200"} 10',
-        'response_time_bucket{le="1",method="get",path="/foo",code="200"} 3',
-        'response_time_bucket{le="2",method="get",path="/foo",code="200"} 2',
-        'response_time_bucket{le="3",method="get",path="/foo",code="200"} 2',
+        'response_time_bucket{le="+Inf",method="get",path="/foo",code="200"} 3',
+        'response_time_bucket{le="1",method="get",path="/foo",code="200"} 1',
+        'response_time_bucket{le="2",method="get",path="/foo",code="200"} 1',
+        'response_time_bucket{le="3",method="get",path="/foo",code="200"} 1',
         'response_time_bucket{le="4",method="get",path="/foo",code="200"} 2',
-        'response_time_bucket{le="5",method="get",path="/foo",code="200"} 1',
+        'response_time_bucket{le="5",method="get",path="/foo",code="200"} 3',
         'response_time_count{method="get",path="/foo",code="404"} 1',
         'response_time_sum{method="get",path="/foo",code="404"} 2',
-        'response_time_bucket{le="1",method="get",path="/foo",code="404"} 1',
+        'response_time_bucket{le="+Inf",method="get",path="/foo",code="404"} 1',
+        'response_time_bucket{le="1",method="get",path="/foo",code="404"} 0',
         'response_time_bucket{le="2",method="get",path="/foo",code="404"} 1',
-        'response_time_bucket{le="3",method="get",path="/foo",code="404"} 0',
-        'response_time_bucket{le="4",method="get",path="/foo",code="404"} 0',
-        'response_time_bucket{le="5",method="get",path="/foo",code="404"} 0',
+        'response_time_bucket{le="3",method="get",path="/foo",code="404"} 1',
+        'response_time_bucket{le="4",method="get",path="/foo",code="404"} 1',
+        'response_time_bucket{le="5",method="get",path="/foo",code="404"} 1',
         'response_time_count 1',
         'response_time_sum 3',
-        'response_time_bucket{le="1"} 1',
-        'response_time_bucket{le="2"} 1',
+        'response_time_bucket{le="+Inf"} 1',
+        'response_time_bucket{le="1"} 0',
+        'response_time_bucket{le="2"} 0',
         'response_time_bucket{le="3"} 1',
-        'response_time_bucket{le="4"} 0',
-        'response_time_bucket{le="5"} 0',
+        'response_time_bucket{le="4"} 1',
+        'response_time_bucket{le="5"} 1',
         ''
       ]);
     });
@@ -437,12 +440,12 @@ describe('Prom Dress', () => {
       });
 
       histogram.observe(2, { method: 'get', path: '/foo', code: 200 });
-      expect(histogram.values.get('code:200$le:1$method:get$path:/foo$').value).to.equal(1);
+      expect(histogram.values.get('code:200$le:1$method:get$path:/foo$').value).to.equal(0);
       expect(histogram.values.get('code:200$le:2$method:get$path:/foo$').value).to.equal(1);
       const child = histogram.labels({ method: 'get', path: '/foo', code: 200 });
       child.observe(1);
-      expect(histogram.values.get('code:200$le:1$method:get$path:/foo$').value).to.equal(2);
-      expect(histogram.values.get('code:200$le:2$method:get$path:/foo$').value).to.equal(1);
+      expect(histogram.values.get('code:200$le:1$method:get$path:/foo$').value).to.equal(1);
+      expect(histogram.values.get('code:200$le:2$method:get$path:/foo$').value).to.equal(2);
     });
   });
 
